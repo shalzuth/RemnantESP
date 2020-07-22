@@ -280,13 +280,6 @@ namespace RemnantESP
                             if (GetKeyState((int)Keys.F2) == 0)
                             {
                                 if (Actor.ClassName.Contains("TraitBook")) SpriteBatch.DrawString(SpriteFont, "Trait(" + dist + ")", loc, Color.CornflowerBlue);
-                                else if (Actor.ClassName.Contains("Traits"))
-                                {
-                                    var InteractLabel = Engine.Memory.ReadProcessMemory<UInt64>(Actor["InteractLabel"].Address);
-                                    var ItemNameAddr = Engine.Memory.ReadProcessMemory<UInt64>(InteractLabel + 0x28); ;
-                                    var ItemName = Engine.Memory.ReadProcessMemory<String>(ItemNameAddr);
-                                    SpriteBatch.DrawString(SpriteFont, ItemName + "(" + dist + ")", loc, Color.CornflowerBlue);
-                                }
                                 else if (Actor.ClassName.Contains("LootContainer"))
                                 {
                                     var tag = Engine.Memory.ReadProcessMemory<UInt16>(Actor.Address + 0x198);
@@ -299,7 +292,7 @@ namespace RemnantESP
                                     ItemName = ItemName.Substring(0, ItemName.IndexOf("Trinket") - 1);
                                     SpriteBatch.DrawString(SpriteFont, ItemName + "(" + dist + ")", loc, Color.Magenta);
                                 }
-                                else if (Actor.ClassName.Contains("GenericItem"))
+                                else if (Actor.ClassName.Contains("GenericItem") || Actor.ClassName.Contains("Traits"))
                                 {
                                     var InteractLabel = Engine.Memory.ReadProcessMemory<UInt64>(Actor["InteractLabel"].Address);
                                     var ItemNameAddr = Engine.Memory.ReadProcessMemory<UInt64>(InteractLabel + 0x28); ;
@@ -314,8 +307,7 @@ namespace RemnantESP
                                 else if (Actor.ClassName.Contains("Ammo_LongGun")) SpriteBatch.DrawString(SpriteFont, "PAmmo(" + dist + ")", loc, Color.Red);
                                 else if (Actor.ClassName.Contains("Consumable")) SpriteBatch.DrawString(SpriteFont, "Item(" + dist + ")", loc, Color.Green);
                                 else if (Actor.ClassName.Contains("Iron")) SpriteBatch.DrawString(SpriteFont, "Iron(" + dist + ")", loc, Color.PaleGoldenrod);
-                            }
-                            
+                            }                            
                             if (GetKeyState((int)Keys.F4) == 1)
                                 SpriteBatch.DrawString(SpriteFont, "Debug(" + dist + ")" + Actor.ClassName, loc, Color.White);
 
