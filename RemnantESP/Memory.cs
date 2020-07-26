@@ -124,12 +124,11 @@ namespace RemnantESP
             Marshal.FreeHGlobal(objPtr);
             WriteProcessMemory(procHandle, addr, objBytes, objBytes.Length, out Int32 bytesRead);
         }
-        public void Execute(IntPtr address, IntPtr arg1, IntPtr arg2)
+        public UInt64 Execute(IntPtr address, IntPtr arg1, IntPtr arg2)
         {
-            //var retValPtr = VirtualAllocEx(procHandle, IntPtr.Zero, 32, 0x3000, 0x4);
-            var retValPtr = VirtualAllocEx(procHandle, IntPtr.Zero, 0x40, 0x1000, 0x40);
-            WriteProcessMemory((UInt64)retValPtr, BitConverter.GetBytes((UInt64)0));
-            _allocations.Add(retValPtr, 0x40);
+            //var retValPtr = VirtualAllocEx(procHandle, IntPtr.Zero, 0x40, 0x1000, 0x40);
+            //WriteProcessMemory((UInt64)retValPtr, BitConverter.GetBytes((UInt64)0));
+            //_allocations.Add(retValPtr, 0x40);
             var dummyParms = VirtualAllocEx(procHandle, IntPtr.Zero, 0x100, 0x1000, 0x40);
             WriteProcessMemory((UInt64)dummyParms, BitConverter.GetBytes((UInt64)0));
             _allocations.Add(dummyParms, 0x100);
@@ -140,32 +139,30 @@ namespace RemnantESP
             asm.AddRange(new byte[] { 0x48, 0xB8 }); // mov rax
             asm.AddRange(BitConverter.GetBytes((UInt64)address));
 
-                asm.AddRange(new byte[] { 0x48, 0xB9 }); // mov rcx
-                asm.AddRange(BitConverter.GetBytes((UInt64)arg1));
+            asm.AddRange(new byte[] { 0x48, 0xB9 }); // mov rcx
+            asm.AddRange(BitConverter.GetBytes((UInt64)arg1));
 
-                asm.AddRange(new byte[] { 0x48, 0xBA }); // mov rdx
-                asm.AddRange(BitConverter.GetBytes((UInt64)arg2));
+            asm.AddRange(new byte[] { 0x48, 0xBA }); // mov rdx
+            asm.AddRange(BitConverter.GetBytes((UInt64)arg2));
 
-                asm.AddRange(new byte[] { 0x48, 0xB8 }); // mov rdx
-                asm.AddRange(BitConverter.GetBytes((UInt64)dummyParms));
+            asm.AddRange(new byte[] { 0x49, 0xB8 }); // mov r8
+            asm.AddRange(BitConverter.GetBytes((UInt64)dummyParms));
 
             asm.AddRange(new byte[] { 0xFF, 0xD0 }); // call rax
             asm.AddRange(new byte[] { 0x48, 0x83, 0xC4 }); // add rsp
             asm.Add(40);
-            asm.AddRange(new byte[] { 0x48, 0xA3 }); // mov rax to
-            asm.AddRange(BitConverter.GetBytes((UInt64)retValPtr));
+            //asm.AddRange(new byte[] { 0x48, 0xA3 }); // mov rax to
+            //asm.AddRange(BitConverter.GetBytes((UInt64)retValPtr));
             asm.Add(0xC3); // ret
             var codePtr = VirtualAllocEx(procHandle, IntPtr.Zero, asm.Count, 0x1000, 0x40);
             WriteProcessMemory(procHandle, (UInt64)codePtr, asm.ToArray(), asm.Count, out Int32 bytesRead);
             _allocations.Add(codePtr, asm.Count);
 
-            // WriteProcessMemory(procHandle, (UInt64)arg1, asm.ToArray(), asm.Count, out Int32 bytesRead);
-
-
             IntPtr thread = CreateRemoteThread(procHandle, IntPtr.Zero, 0, codePtr, IntPtr.Zero, 0, IntPtr.Zero);
             WaitForSingleObject(thread, 10000);
-            var qq = ReadProcessMemory<UInt64>((UInt64)retValPtr);
+            var returnValue = ReadProcessMemory<UInt64>((UInt64)dummyParms);
             CloseHandle(thread);
+            return returnValue;
         }
 
         public List<UInt64> SearchProcessMemory(String pattern, UInt64 start, UInt64 end, Boolean absolute = true)

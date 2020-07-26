@@ -23,6 +23,7 @@ namespace RemnantESP
             var GWorldPattern = (UInt64)Memory.FindPattern("48 8B 1D ? ? ? ? 48 85 DB 74 3B 41 B0 01");
             // var obj = (gobject + 8i64 * (index / 0x10000)), inlined/appears multiple
             var GObjectsPattern = (UInt64)Memory.FindPattern("C1 F9 10 48 63 C9 48 8D 14 40 48 8B 05");
+            //var GObjectsPattern = (UInt64)Memory.FindPattern("4C 8B 15 ? ? ? ? 8D 43 01");
 
             var offset = Memory.ReadProcessMemory<UInt32>(GNamesPattern + 3);
             GNames = Memory.ReadProcessMemory<UInt64>(GNamesPattern + offset + 7);
@@ -40,7 +41,7 @@ namespace RemnantESP
         {
             var fNamePtr = Memory.ReadProcessMemory<ulong>(GNames + ((UInt64)i / 0x4000) * 8);
             var fName2 = Memory.ReadProcessMemory<ulong>(fNamePtr + (8 * ((UInt64)i % 0x4000)));
-            var fName3 = Memory.ReadProcessMemory<String>(fName2 + 0xC);
+            var fName3 = Memory.ReadProcessMemory<String>(fName2 + 0xC); // 0x10 on some version?
             if (fName3.Contains("/")) return fName3.Substring(fName3.LastIndexOf("/") + 1);
             return fName3;
         }
@@ -125,7 +126,7 @@ namespace RemnantESP
         public UInt64 GetFieldAddr(UInt64 origClassAddr, UInt64 classAddr, String fieldName)
         {
             if (ClassFieldToAddr.ContainsKey(origClassAddr) && ClassFieldToAddr[origClassAddr].ContainsKey(fieldName)) return ClassFieldToAddr[origClassAddr][fieldName];
-            var field = classAddr + 0x40;
+            var field = classAddr + 0x40; // 0x10 on some versions?
             while ((field = Memory.ReadProcessMemory<UInt64>(field + 0x28)) > 0)
             {
                 var fName = GetName(Memory.ReadProcessMemory<Int32>(field + 0x18));
@@ -138,9 +139,10 @@ namespace RemnantESP
                     return field;
                 }
             }
-            var parentClass = Memory.ReadProcessMemory<UInt64>(classAddr + 0x40);
+            var parentClass = Memory.ReadProcessMemory<UInt64>(classAddr + 0x40); // 0x30 on some versions
             var c = GetFullName(classAddr);
             var pc = GetFullName(parentClass);
+            if (parentClass == classAddr) throw new Exception("parent is me");
             if (parentClass == 0) throw new Exception("bad field");
             return GetFieldAddr(origClassAddr, parentClass, fieldName);
         }
@@ -173,7 +175,8 @@ namespace RemnantESP
             sb.Append(classAddr.ToString("X") + " : " + name);
             var pcAddr = classAddr;
             var c = 0;
-            while((pcAddr = Memory.ReadProcessMemory<UInt64>(pcAddr + 0x40)) > 0 && c++ < 20){
+            while ((pcAddr = Memory.ReadProcessMemory<UInt64>(pcAddr + 0x40)) > 0 && c++ < 20)
+            {
                 var super = GetFullName(pcAddr);
                 sb.Append(" : " + super);
             }
@@ -293,8 +296,8 @@ namespace RemnantESP
                     if (_classAddr != UInt64.MaxValue) return _classAddr;
                     if (ObjToClass.ContainsKey(Address))
                     {
-                       // _classAddr = ObjToClass[Address];
-                       // return _classAddr;
+                        // _classAddr = ObjToClass[Address];
+                        // return _classAddr;
                     }
                     _classAddr = Engine.Memory.ReadProcessMemory<UInt64>(Address + 0x10);
                     //ObjToClass[Address] = _classAddr;
@@ -374,10 +377,11 @@ namespace RemnantESP
                 }
             }
             UInt64 BaseObjAddr;
-            public void Invoke()
+            public UInt64 Invoke()
             {
                 var vTableFunc = Engine.Memory.ReadProcessMemory<UInt64>(BaseObjAddr) + 65 * 8;
-                Engine.Memory.Execute((IntPtr)vTableFunc, (IntPtr)BaseObjAddr, (IntPtr)Address);
+                vTableFunc = Engine.Memory.ReadProcessMemory<UInt64>(vTableFunc);
+                return Engine.Memory.Execute((IntPtr)vTableFunc, (IntPtr)BaseObjAddr, (IntPtr)Address);
             }
         }
     }
