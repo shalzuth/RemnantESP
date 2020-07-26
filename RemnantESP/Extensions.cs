@@ -79,7 +79,7 @@ namespace RemnantESP
             var diff = source - destination;
             var hyp = Math.Sqrt(diff.X * diff.X + diff.Y * diff.Y);
             angles.Y = (Single)Math.Atan(diff.Y / diff.X) * 57.295779513082f;
-            angles.X = (Single)Math.Atan(diff.Z / hyp) * 57.295779513082f;
+            angles.X = -(Single)Math.Atan(diff.Z / hyp) * 57.295779513082f;
             angles.Z = 0.0f;
             if (diff.X >= 0.0)
             {

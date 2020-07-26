@@ -127,7 +127,7 @@ namespace RemnantESP
             var angle = -Math.PI / 2 - Math.Atan2(-(end.Y - start.Y), end.X - start.X);
             SpriteBatch.Draw(line, new Rectangle((int)(start.X), (int)(start.Y), 2, (int)dist), null, color, (Single)angle, Vector2.Zero, SpriteEffects.None, 0.0f);
         }
-        void DrawBox(Vector3 targetPosition, Vector3 targetRotation, Vector3 cameraLocation, Vector3 cameraRotation, Single fieldOfView)
+        void DrawBox(Vector3 targetPosition, Vector3 targetRotation, Vector3 cameraLocation, Vector3 cameraRotation, Single fieldOfView, Color color)
         {
             var targetTest = WorldToScreen(targetPosition, cameraLocation, cameraRotation, fieldOfView);
             if (targetTest.X < 0 || targetTest.Y < 0 || targetTest.X > Width || targetTest.Y > Height)
@@ -166,19 +166,18 @@ namespace RemnantESP
             var s00 = WorldToScreen(p00, cameraLocation, cameraRotation, fieldOfView);
             var s02 = WorldToScreen(p02, cameraLocation, cameraRotation, fieldOfView);
             var s01 = WorldToScreen(p01, cameraLocation, cameraRotation, fieldOfView);
-            var boxColor = Color.Red;
 
             p03.Z += h; var s032 = WorldToScreen(p03, cameraLocation, cameraRotation, fieldOfView);
             p00.Z += h; var s002 = WorldToScreen(p00, cameraLocation, cameraRotation, fieldOfView);
             p02.Z += h; var s022 = WorldToScreen(p02, cameraLocation, cameraRotation, fieldOfView);
             p01.Z += h; var s012 = WorldToScreen(p01, cameraLocation, cameraRotation, fieldOfView);
 
-            DrawLines(boxColor, new Vector2[] { s00, s01, s02, s03, s00 });
-            DrawLines(boxColor, new Vector2[] { s002, s012, s022, s032, s002 });
-            DrawLine(boxColor, s03, s032);
-            DrawLine(boxColor, s00, s002);
-            DrawLine(boxColor, s02, s022);
-            DrawLine(boxColor, s01, s012);
+            DrawLines(color, new Vector2[] { s00, s01, s02, s03, s00 });
+            DrawLines(color, new Vector2[] { s002, s012, s022, s032, s002 });
+            DrawLine(color, s03, s032);
+            DrawLine(color, s00, s002);
+            DrawLine(color, s02, s022);
+            DrawLine(color, s01, s012);
         }
         void DrawArrow(Vector3 targetPosition, Vector3 targetRotation, Vector3 playerLocation, Vector3 cameraRotation)
         {
@@ -218,12 +217,15 @@ namespace RemnantESP
         void DrawEsp()
         {
             var World = new Engine.UEObject(Engine.GWorld);
-            //var Level = World["PersistentLevel"];
+            var PersistentLevel = World["PersistentLevel"];
             var Levels = World["Levels"];
             var OwningGameInstance = World["OwningGameInstance"];
+            //var IsInGameplay = OwningGameInstance["IsInGameplay"];
+            //IsInGameplay.Invoke();
+           // Console.WriteLine(Engine.Instance.DumpClass(OwningGameInstance.ClassAddr));
             var LocalPlayers = OwningGameInstance["LocalPlayers"];
             var PlayerController = LocalPlayers[0]["PlayerController"];
-            //var Player = PlayerController["Player"];
+            var Player = PlayerController["Player"];
 
             var AcknowledgedPawn = PlayerController["AcknowledgedPawn"];
             if (AcknowledgedPawn == null || !AcknowledgedPawn.IsA("Class Engine.Character")) return;
@@ -253,8 +255,21 @@ namespace RemnantESP
             var PlayerRoot = AcknowledgedPawn["RootComponent"];
             var PlayerRelativeLocation = PlayerRoot["RelativeLocation"];
             var PlayerLocation = Engine.Memory.ReadProcessMemory<Vector3>(PlayerRelativeLocation.Address);
+            //Console.WriteLine(Engine.Instance.DumpClass(PlayerCameraManager.ClassAddr));
             //var PlayerRotation = Engine.Memory.ReadProcessMemory<Vector3>(PlayerRelativeLocation.Address + 24);
+            //var SetHealth = AcknowledgedPawn["SetActorScale3D"];
+            //var GetHealthMax = AcknowledgedPawn["GetHealthMax"];
+            //GetHealthMax.Invoke();
+            //var rot = Player["ViewportClient"];
+            //var ro2t = Engine.Memory.ReadProcessMemory<Vector3>(PlayerController["ControlRotation"].Address);
+            //var ro3t = Engine.Memory.ReadProcessMemory<Vector3>(PlayerController["TargetViewRotation"].Address);
+            //var rot = Engine.Memory.ReadProcessMemory<Vector3>(AcknowledgedPawn["ViewRotation"].Address);;
             DrawArrow(PlayerLocation, CameraRotation, PlayerLocation, CameraRotation);
+            var bestAngle = Single.MaxValue;
+            var bestTurn = Vector3.Zero;
+            var bestLocation = Vector3.Zero;
+            var bestRotation = Vector3.Zero;
+            var target = Vector2.Zero;
             for (var levelIndex = 1u; levelIndex < Levels.Num; levelIndex++)
             {
                 var Level = Levels[levelIndex];
@@ -313,7 +328,7 @@ namespace RemnantESP
 
                         }
                     }
-                    if (GetKeyState((int)Keys.F1) == 0 && Actor.IsA("Class GunfireRuntime.AICharacter"))
+                    if (GetKeyState((int)Keys.F1) == 0 && Actor.IsA("Class Engine.Character"))
                     {
                         var RootComponent = Actor["RootComponent"];
                         if (RootComponent == null || RootComponent.Address == 0 || !RootComponent.IsA("Class Engine.CapsuleComponent")) continue;
@@ -324,10 +339,32 @@ namespace RemnantESP
                         if (Actor["bActorIsBeingDestroyed"].Value == 1) continue;
                         var hp = Engine.Memory.ReadProcessMemory<Single>(Actor["HealthNormalized"].Address);
                         if (hp == 0) continue;
-                        DrawBox(Location, Rotation, CameraLocation, CameraRotation, CameraFOV);
+                        DrawBox(Location, Rotation, CameraLocation, CameraRotation, CameraFOV, Color.Red);
                         DrawArrow(Location, Rotation, PlayerLocation, CameraRotation);
+
+                        if ((GetKeyState((int)Keys.RButton) & 0x100) != 0)
+                        {
+                            var turnVector = CameraLocation.CalcRotation(Location, CameraRotation, 0.0f);
+                            var turnWeight = (Single)(CameraRotation - turnVector).Length();
+                            if (turnWeight < bestAngle)
+                            {
+                                bestTurn = turnVector;
+                                bestAngle = turnWeight;
+                                bestLocation = Location;
+                                bestRotation = Rotation;
+
+                                target = WorldToScreen(Location, CameraLocation, CameraRotation, CameraFOV);
+                            }
+                        }
                     }
                 }
+            }
+            if ((GetKeyState((int)Keys.RButton) & 0x100) != 0)
+            {
+                DrawBox(bestLocation, bestRotation, CameraLocation, CameraRotation, CameraFOV, Color.Green);
+                //AimAtPos(target);
+                //Engine.Memory.WriteProcessMemory(PlayerController["ControlRotation"].Address, bestTurn);
+                //Engine.Memory.WriteProcessMemory(CameraPOV["Rotation"].Address, bestTurn);
             }
         }
         Int32 Height = 0;
@@ -356,12 +393,43 @@ namespace RemnantESP
             SpriteBatch.End();
             base.Draw(gameTime);
         }
+        private void AimAtPos(Vector2 location, Single smoothSpeed = 2)
+        {
+            Single ScreenCenterX = Width / 2;
+            Single ScreenCenterY = Height / 2;
+            Single TargetX = 0;
+            Single TargetY = 0;
+            if (location.X > ScreenCenterX)
+            {
+                TargetX = -(ScreenCenterX - location.X);
+                TargetX /= smoothSpeed;
+            }
+            else if (location.X < ScreenCenterX)
+            {
+                TargetX = location.X - ScreenCenterX;
+                TargetX /= smoothSpeed;
+            }
+            if (location.Y > ScreenCenterY)
+            {
+                TargetY = -(ScreenCenterY - location.Y);
+                TargetY /= smoothSpeed;
+            }
+            else if (location.Y < ScreenCenterY)
+            {
+                TargetY = location.Y - ScreenCenterY;
+                TargetY /= smoothSpeed;
+            }
+            if (TargetX > 10) TargetX = 10;
+            if (TargetY > 10) TargetY = 10;
+            mouse_event(0x0001, (int)TargetX, (int)TargetY, 0, 0);
+        }
         [DllImport("user32")] static extern Int32 GetWindowLong(IntPtr hWnd, int nIndex);
         [DllImport("user32")] static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
         [DllImport("user32")] static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
         [DllImport("user32")] static extern bool SetWindowPos(IntPtr hWnd, int hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
         [DllImport("user32")] static extern IntPtr SetActiveWindow(IntPtr handle);
         [DllImport("user32")] static extern short GetKeyState(int keyCode);
+        [DllImport("user32")] static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, int dwExtraInfo);
         protected void WndProc(ref Message m)
         {
             if (m.Msg == 0x0021)

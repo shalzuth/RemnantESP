@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Text;
 
 namespace RemnantESP
@@ -178,20 +179,24 @@ namespace RemnantESP
             }
             sb.AppendLine();
 
-            var field = classAddr + 0x40;
-            while (true)
+            pcAddr = classAddr;
+            while ((pcAddr = Memory.ReadProcessMemory<UInt64>(pcAddr + 0x40)) > 0)
             {
-                var nextField = Memory.ReadProcessMemory<UInt64>(field + 0x28);
-                if (nextField == field) break;
-                field = nextField;
-                if (field == 0) break;
-                var fieldName = GetFullName(field);
-                var f = Memory.ReadProcessMemory<UInt64>(field + 0x70);
-                var fType = GetName(Memory.ReadProcessMemory<Int32>(f + 0x18));
-                var fName = GetName(Memory.ReadProcessMemory<Int32>(field + 0x18));
-                var offset = Memory.ReadProcessMemory<Int32>(field + 0x44);
-                if (fType == "None" && String.IsNullOrEmpty(fName)) break;
-                sb.AppendLine("  " + fType + " " + fName + " : 0x" + offset.ToString("X"));
+                var field = pcAddr + 0x40;
+                while (true)
+                {
+                    var nextField = Memory.ReadProcessMemory<UInt64>(field + 0x28);
+                    if (nextField == field) break;
+                    field = nextField;
+                    if (field == 0) break;
+                    var fieldName = GetFullName(field);
+                    var f = Memory.ReadProcessMemory<UInt64>(field + 0x70);
+                    var fType = GetName(Memory.ReadProcessMemory<Int32>(f + 0x18));
+                    var fName = GetName(Memory.ReadProcessMemory<Int32>(field + 0x18));
+                    var offset = Memory.ReadProcessMemory<Int32>(field + 0x44);
+                    if (fType == "None" && String.IsNullOrEmpty(fName)) break;
+                    sb.AppendLine("  " + fType + " " + fName + " : 0x" + offset.ToString("X"));
+                }
             }
             return sb.ToString();
         }
@@ -341,6 +346,11 @@ namespace RemnantESP
                         var fullVal = Engine.Memory.ReadProcessMemory<Byte>(Address + offset);
                         obj._value = ((fullVal & boolMask) == boolMask) ? 1u : 0;
                     }
+                    else if (fieldType.Contains("Function"))
+                    {
+                        obj = new UEObject(fieldAddr);
+                        obj.BaseObjAddr = Address;
+                    }
                     else
                     {
                         obj = new UEObject(Address + offset);
@@ -362,6 +372,12 @@ namespace RemnantESP
                 {
                     return new UEObject(Engine.Memory.ReadProcessMemory<UInt64>(Engine.Memory.ReadProcessMemory<UInt64>(Address) + index * 8));
                 }
+            }
+            UInt64 BaseObjAddr;
+            public void Invoke()
+            {
+                var vTableFunc = Engine.Memory.ReadProcessMemory<UInt64>(BaseObjAddr) + 65 * 8;
+                Engine.Memory.Execute((IntPtr)vTableFunc, (IntPtr)BaseObjAddr, (IntPtr)Address);
             }
         }
     }
