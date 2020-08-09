@@ -217,18 +217,20 @@ namespace RemnantESP
         void DrawEsp()
         {
             var World = new Engine.UEObject(Engine.GWorld);
-            var PersistentLevel = World["PersistentLevel"];
+            //var PersistentLevel = World["PersistentLevel"];
             var Levels = World["Levels"];
             var OwningGameInstance = World["OwningGameInstance"];
             //var IsInGameplay = OwningGameInstance["IsInGameplay"];
             //IsInGameplay.Invoke();
-           // Console.WriteLine(Engine.Instance.DumpClass(OwningGameInstance.ClassAddr));
             var LocalPlayers = OwningGameInstance["LocalPlayers"];
             var PlayerController = LocalPlayers[0]["PlayerController"];
             var Player = PlayerController["Player"];
-
             var AcknowledgedPawn = PlayerController["AcknowledgedPawn"];
             if (AcknowledgedPawn == null || !AcknowledgedPawn.IsA("Class Engine.Character")) return;
+            //Console.WriteLine(Engine.Instance.DumpClass(PlayerController.ClassAddr));
+            var ComputeOffenseLevel = AcknowledgedPawn["ComputeOffenseLevel"].Invoke<UInt32>();
+            var RangedWeapon = new Engine.UEObject(AcknowledgedPawn["GetCurrentRangedWeapon"].Invoke<UInt64>());
+            Console.WriteLine(Engine.Instance.DumpClass(PlayerController.ClassAddr));
             if (GetKeyState((int)Keys.F5) == 1)
             {
                 Engine.Memory.WriteProcessMemory(AcknowledgedPawn["Stamina"]["Value"].Address, BitConverter.GetBytes(50.0f));
@@ -241,12 +243,25 @@ namespace RemnantESP
                 for (var itemIndex = 0u; itemIndex < Items.Num; itemIndex++)
                 {
                     var ItemInstanceData = new Engine.UEObject(Engine.Memory.ReadProcessMemory<UInt64>(ItemsAddr + 3 * 8 + itemIndex * 5 * 8));
-                    if (ItemInstanceData.IsA("Class GunfireRuntime.RangedWeaponInstanceData"))
-                        Engine.Memory.WriteProcessMemory(ItemInstanceData["AmmoInClip"].Address, BitConverter.GetBytes(50));
+                    if (ItemInstanceData.IsA("Class GunfireRuntime.RangedWeaponInstanceData")) Engine.Memory.WriteProcessMemory(ItemInstanceData["AmmoInClip"].Address, BitConverter.GetBytes(50));
+                    //if (ItemInstanceData.IsA("Class GunfireRuntime.RangedWeaponInstanceData"))
+                     //   Console.WriteLine(Engine.Instance.DumpClass(ItemInstanceData.ClassAddr));
                 }
             }
+            var PersistentBuffs = AcknowledgedPawn["PersistentBuffs"];
+            var BuffsAddr = Engine.Memory.ReadProcessMemory<UInt64>(PersistentBuffs.Address);
+            for (var buffIndex = 0u; buffIndex < PersistentBuffs.Num; buffIndex++)
+            {
+                var ItemInstanceData1 = new Engine.UEObject(Engine.Memory.ReadProcessMemory<UInt64>(BuffsAddr + 4 * 8 + buffIndex * 5 * 8));
+                var ItemInstanceData2 = new Engine.UEObject(Engine.Memory.ReadProcessMemory<UInt64>(BuffsAddr));
+                //if (ItemInstanceData.IsA("Class GunfireRuntime.RangedWeaponInstanceData"))
+                   //Console.WriteLine(Engine.Instance.DumpClass(ItemInstanceData1.ClassAddr));
+                   //Console.WriteLine(Engine.Instance.DumpClass(ItemInstanceData2.ClassAddr));
+            }
             var PlayerCameraManager = PlayerController["PlayerCameraManager"];
+            //Console.WriteLine(Engine.Instance.DumpClass(PlayerCameraManager.ClassAddr));
             var CameraCache = PlayerCameraManager["CameraCachePrivate"];
+            //Console.WriteLine(Engine.Instance.DumpClass(CameraCache.ClassAddr));
             var CameraPOV = CameraCache["POV"];
             var CameraLocation = Engine.Memory.ReadProcessMemory<Vector3>(CameraPOV["Location"].Address);
             var CameraRotation = Engine.Memory.ReadProcessMemory<Vector3>(CameraPOV["Rotation"].Address);
@@ -255,7 +270,7 @@ namespace RemnantESP
             var PlayerRoot = AcknowledgedPawn["RootComponent"];
             var PlayerRelativeLocation = PlayerRoot["RelativeLocation"];
             var PlayerLocation = Engine.Memory.ReadProcessMemory<Vector3>(PlayerRelativeLocation.Address);
-            //Console.WriteLine(Engine.Instance.DumpClass(PlayerCameraManager.ClassAddr));
+            //Console.WriteLine(Engine.Instance.DumpClass(PlayerRoot.ClassAddr));
             //var PlayerRotation = Engine.Memory.ReadProcessMemory<Vector3>(PlayerRelativeLocation.Address + 24);
             //var SetHealth = AcknowledgedPawn["SetActorScale3D"];
             //var GetHealthMax = AcknowledgedPawn["GetHealthMax"];
@@ -280,6 +295,10 @@ namespace RemnantESP
                     var Actor = Actors[i];
                     if (Actor.Address == 0) continue;
                     if (Actor.Value == 0) continue;
+                    if (Actor.IsA("Class Remnant.RemnantWeaponMod"))
+                    {
+                        Console.WriteLine("rawr");
+                    }
                     if (Actor.IsA("Class GunfireRuntime.Item") || Actor.IsA("Class Remnant.LootContainer"))
                     {
                         var RootComponent = Actor["RootComponent"];
@@ -341,7 +360,29 @@ namespace RemnantESP
                         if (hp == 0) continue;
                         DrawBox(Location, Rotation, CameraLocation, CameraRotation, CameraFOV, Color.Red);
                         DrawArrow(Location, Rotation, PlayerLocation, CameraRotation);
-
+                        var Silhouette = Actor["Silhouette"];
+                        var RemnantSilhouette = Actor["RemnantSilhouette"];
+                        var DisplayInfoComponent = Actor["DisplayInfoComponent"];
+                        var Dormant_Emis = Actor["NonDormant_Emis"];
+                        var q = Engine.Memory.ReadProcessMemory<Vector3>(Dormant_Emis.Address); ;
+                        var MaxDistance = Silhouette["MaxDistance"];
+                        var OutlineAddr = Silhouette["DefaultSilhouetteColorIdx"].Address + 4;
+                        //Engine.Memory.WriteProcessMemory(OutlineAddr, BitConverter.GetBytes((UInt16)0x101));
+                        var targetTest = WorldToScreen(Location, CameraLocation, CameraRotation, CameraFOV);
+                        var test1 = Engine.Memory.ReadProcessMemory<UInt32>(MaxDistance.Address);
+                        var test3 = Engine.Memory.ReadProcessMemory<UInt16>(OutlineAddr).ToString("X");
+                        var test4 = Engine.Memory.ReadProcessMemory<UInt64>(Silhouette["DefaultSilhouetteColorIdx"].Address + 0x10).ToString("X");
+                        /*SpriteBatch.DrawString(SpriteFont, "Debug" + BitConverter.ToSingle(BitConverter.GetBytes(test1), 0)
+                            + ": " + test3 + " : rt"
+                            + Silhouette["bIsActive"].Value.ToString("X") + " : vt"
+                            + Silhouette["ViewerTag"].Value.ToString("X") + " : vis" 
+                            + Silhouette["Visibility"].Value.ToString("X") + " : dc" 
+                            + Silhouette["DefaultSilhouetteColorIdx"].Value.ToString("X") + " : ??" 
+                            + test4
+                            , targetTest, Color.White);*/
+                        SpriteBatch.DrawString(SpriteFont, Actor.Address.ToString("X")
+                            , targetTest, Color.White);
+                       // Console.WriteLine(Engine.Instance.DumpClass(DisplayInfoComponent.ClassAddr));
                         if ((GetKeyState((int)Keys.RButton) & 0x100) != 0)
                         {
                             var turnVector = CameraLocation.CalcRotation(Location, CameraRotation, 0.0f);
@@ -362,6 +403,18 @@ namespace RemnantESP
             if ((GetKeyState((int)Keys.RButton) & 0x100) != 0)
             {
                 DrawBox(bestLocation, bestRotation, CameraLocation, CameraRotation, CameraFOV, Color.Green);
+                //PlayerController["SetControlRotation"].Invoke<UInt32>(bestTurn, true);
+                //PlayerController["ClientSetLocation"].Invoke<UInt32>(CameraLocation, CameraRotation);
+                //AcknowledgedPawn["Jump"].Invoke<UInt32>();
+                //AcknowledgedPawn["SetControlRotation"].Invoke<UInt32>();
+                //PlayerCameraManager["K2_SetActorRotation"].Invoke<UInt32>(bestTurn, true, true);
+                //AcknowledgedPawn["K2_SetActorRotation"].Invoke<UInt32>(bestTurn, true, true);
+                PlayerController["StartFire"].Invoke<UInt32>(true);
+                PlayerController["ServerUpdateCamera"].Invoke<UInt32>("wtffix");
+                PlayerController["GetHud"].Invoke<UInt32>("wtffix");
+                //RangedWeapon["OnFire"].Invoke<UInt32>(PlayerLocation, bestLocation, 1.0f);
+                //RangedWeapon["ServerFire"].Invoke<UInt32>(PlayerLocation, bestLocation, 1.0f, (Int32)123, 0, 0, 0, 0, 0, 0);
+                //RangedWeapon["ServerUse"].Invoke<UInt32>();
                 //AimAtPos(target);
                 //Engine.Memory.WriteProcessMemory(PlayerController["ControlRotation"].Address, bestTurn);
                 //Engine.Memory.WriteProcessMemory(CameraPOV["Rotation"].Address, bestTurn);

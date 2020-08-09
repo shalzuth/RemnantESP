@@ -23,6 +23,8 @@ namespace RemnantESP
             var GWorldPattern = (UInt64)Memory.FindPattern("48 8B 1D ? ? ? ? 48 85 DB 74 3B 41 B0 01");
             // var obj = (gobject + 8i64 * (index / 0x10000)), inlined/appears multiple
             var GObjectsPattern = (UInt64)Memory.FindPattern("C1 F9 10 48 63 C9 48 8D 14 40 48 8B 05");
+            var GObjectsPattern2 = (UInt64)Memory.FindPattern("45 33 F6 4D 8B E0");
+            var GObjectsPattern3 = (UInt64)Memory.FindPattern("45 33 F6 3B 05 ? ? ? ? 4D 8B E0");
             //var GObjectsPattern = (UInt64)Memory.FindPattern("4C 8B 15 ? ? ? ? 8D 43 01");
 
             var offset = Memory.ReadProcessMemory<UInt32>(GNamesPattern + 3);
@@ -54,8 +56,12 @@ namespace RemnantESP
             var name = GetName(classNameIndex);
             UInt64 outerEntityAddr = entityAddr;
             var parentName = "";
-            while ((outerEntityAddr = Memory.ReadProcessMemory<UInt64>(outerEntityAddr + 0x20)) > 0)
+            //while ((outerEntityAddr = Memory.ReadProcessMemory<UInt64>(outerEntityAddr + 0x20)) > 0)
+            while (true)
             {
+                var tempOuterEntityAddr = Memory.ReadProcessMemory<UInt64>(outerEntityAddr + 0x20);
+                if (tempOuterEntityAddr == outerEntityAddr || tempOuterEntityAddr == 0) break;
+                outerEntityAddr = tempOuterEntityAddr;
                 var outerNameIndex = Memory.ReadProcessMemory<Int32>(outerEntityAddr + 0x18);
                 var tempName = GetName(outerNameIndex);
                 if (tempName == "") break;
@@ -183,7 +189,8 @@ namespace RemnantESP
             sb.AppendLine();
 
             pcAddr = classAddr;
-            while ((pcAddr = Memory.ReadProcessMemory<UInt64>(pcAddr + 0x40)) > 0)
+            //while ((pcAddr = Memory.ReadProcessMemory<UInt64>(pcAddr + 0x40)) > 0)
+            while (true)
             {
                 var field = pcAddr + 0x40;
                 while (true)
@@ -198,8 +205,21 @@ namespace RemnantESP
                     var fName = GetName(Memory.ReadProcessMemory<Int32>(field + 0x18));
                     var offset = Memory.ReadProcessMemory<Int32>(field + 0x44);
                     if (fType == "None" && String.IsNullOrEmpty(fName)) break;
-                    sb.AppendLine("  " + fType + " " + fName + " : 0x" + offset.ToString("X"));
+                    var fieldObj = new UEObject(field);
+                    if (fieldObj.ClassName == "Class CoreUObject.Function")
+                    {
+                        sb.AppendLine("  " + fType + " " + fName + "(" + fieldObj.ClassName + ") : 0x" + offset.ToString("X"));
+                        var funcParams = field + 0x20u;
+                        while ((funcParams = Memory.ReadProcessMemory<UInt64>(funcParams + 0x28u)) > 0)
+                        {
+                            sb.AppendLine("      " + GetFullName(funcParams));
+                        }
+                    }
+                    else
+                        sb.AppendLine("  " + fType + " " + fName + "(" + fieldObj.ClassName + ") : 0x" + offset.ToString("X"));
                 }
+                pcAddr = Memory.ReadProcessMemory<UInt64>(pcAddr + 0x40);
+                if (pcAddr == 0) break;
             }
             return sb.ToString();
         }
@@ -244,7 +264,7 @@ namespace RemnantESP
         {
             var sb = new StringBuilder();
             var entityList = Memory.ReadProcessMemory<UInt64>(Memory.BaseAddress + GObjects);
-            var count = Memory.ReadProcessMemory<UInt64>(Memory.BaseAddress + GObjects + 0x14);
+            var count = Memory.ReadProcessMemory<UInt32>(Memory.BaseAddress + GObjects + 0x14);
             entityList = Memory.ReadProcessMemory<UInt64>(entityList);
             for (var i = 0u; i < count; i++)
             {
@@ -323,6 +343,10 @@ namespace RemnantESP
                     _value = Engine.Memory.ReadProcessMemory<UInt64>(Address);
                     return _value;
                 }
+                set
+                {
+                    Engine.Memory.WriteProcessMemory(Address, value);
+                }
             }
             public UInt64 Address;
             public UEObject this[String key]
@@ -377,11 +401,31 @@ namespace RemnantESP
                 }
             }
             UInt64 BaseObjAddr;
-            public UInt64 Invoke()
+            static UInt32 _vTableVFunc = UInt32.MaxValue;
+            UInt32 VTableVFunc
             {
-                var vTableFunc = Engine.Memory.ReadProcessMemory<UInt64>(BaseObjAddr) + 65 * 8;
+                get
+                {
+                    if (_vTableVFunc != UInt32.MaxValue) return _vTableVFunc;
+                    var v = Engine.Memory.ReadProcessMemory<UInt64>(BaseObjAddr);
+                    for (var i = 60u; i < 75; i++)
+                    {
+                        var s = (IntPtr)Engine.Memory.ReadProcessMemory<UInt64>(v + i * 8);
+                        var sig = (UInt64)Engine.Memory.FindPattern("48 8B EA 48 8B D9 FF 90 ? ? ? ? 48 85 C0", s, 0x200);
+                        if (sig != 0)
+                        {
+                            _vTableVFunc = i;
+                            return _vTableVFunc;
+                        }
+                    }
+                    throw new Exception("not found");
+                }
+            }
+            public T Invoke<T>(params Object[] args)
+            {
+                var vTableFunc = Engine.Memory.ReadProcessMemory<UInt64>(BaseObjAddr) + VTableVFunc * 8;
                 vTableFunc = Engine.Memory.ReadProcessMemory<UInt64>(vTableFunc);
-                return Engine.Memory.Execute((IntPtr)vTableFunc, (IntPtr)BaseObjAddr, (IntPtr)Address);
+                return Engine.Memory.Execute<T>((IntPtr)vTableFunc, (IntPtr)BaseObjAddr, (IntPtr)Address, args);
             }
         }
     }

@@ -117,33 +117,41 @@ namespace RemnantESP
         }
         public void WriteProcessMemory<T>(UInt64 addr, T value)
         {
-            var objBytes = new Byte[Marshal.SizeOf<T>()];
-            var objPtr = Marshal.AllocHGlobal(Marshal.SizeOf<T>());
+            var objSize = Marshal.SizeOf(value);
+            var objBytes = new Byte[objSize];
+            var objPtr = Marshal.AllocHGlobal(objSize);
             Marshal.StructureToPtr(value, objPtr, true);
-            Marshal.Copy(objPtr, objBytes, 0, Marshal.SizeOf<T>());
+            Marshal.Copy(objPtr, objBytes, 0, objSize);
             Marshal.FreeHGlobal(objPtr);
             WriteProcessMemory(procHandle, addr, objBytes, objBytes.Length, out Int32 bytesRead);
         }
-        public UInt64 Execute(IntPtr address, IntPtr arg1, IntPtr arg2)
+        public T Execute<T>(IntPtr vtableAddr, IntPtr objAddr, IntPtr funcAddr, params Object[] args)
         {
             //var retValPtr = VirtualAllocEx(procHandle, IntPtr.Zero, 0x40, 0x1000, 0x40);
             //WriteProcessMemory((UInt64)retValPtr, BitConverter.GetBytes((UInt64)0));
             //_allocations.Add(retValPtr, 0x40);
+            //var retValPtrInit = ReadProcessMemory<UInt64>((UInt64)retValPtr);
             var dummyParms = VirtualAllocEx(procHandle, IntPtr.Zero, 0x100, 0x1000, 0x40);
-            WriteProcessMemory((UInt64)dummyParms, BitConverter.GetBytes((UInt64)0));
             _allocations.Add(dummyParms, 0x100);
+            WriteProcessMemory((UInt64)dummyParms, BitConverter.GetBytes((UInt64)0xffffffffffffffff));
+            var offset = 0u;
+            foreach(var obj in args)
+            {
+                WriteProcessMemory((UInt64)dummyParms + offset, obj);
+                offset += (UInt32)Marshal.SizeOf(obj);
+            }
 
             var asm = new List<Byte>();
             asm.AddRange(new byte[] { 0x48, 0x83, 0xEC }); // sub rsp
             asm.Add(40);
             asm.AddRange(new byte[] { 0x48, 0xB8 }); // mov rax
-            asm.AddRange(BitConverter.GetBytes((UInt64)address));
+            asm.AddRange(BitConverter.GetBytes((UInt64)vtableAddr));
 
             asm.AddRange(new byte[] { 0x48, 0xB9 }); // mov rcx
-            asm.AddRange(BitConverter.GetBytes((UInt64)arg1));
+            asm.AddRange(BitConverter.GetBytes((UInt64)objAddr));
 
             asm.AddRange(new byte[] { 0x48, 0xBA }); // mov rdx
-            asm.AddRange(BitConverter.GetBytes((UInt64)arg2));
+            asm.AddRange(BitConverter.GetBytes((UInt64)funcAddr));
 
             asm.AddRange(new byte[] { 0x49, 0xB8 }); // mov r8
             asm.AddRange(BitConverter.GetBytes((UInt64)dummyParms));
@@ -158,9 +166,16 @@ namespace RemnantESP
             WriteProcessMemory(procHandle, (UInt64)codePtr, asm.ToArray(), asm.Count, out Int32 bytesRead);
             _allocations.Add(codePtr, asm.Count);
 
+            var initFlags = ReadProcessMemory<UInt64>((UInt64)funcAddr + 0x98);
+            var nativeFlag = initFlags;
+            nativeFlag |= 0x400;
+            WriteProcessMemory((UInt64)funcAddr + 0x98, BitConverter.GetBytes(nativeFlag));
+
             IntPtr thread = CreateRemoteThread(procHandle, IntPtr.Zero, 0, codePtr, IntPtr.Zero, 0, IntPtr.Zero);
             WaitForSingleObject(thread, 10000);
-            var returnValue = ReadProcessMemory<UInt64>((UInt64)dummyParms);
+            WriteProcessMemory((UInt64)funcAddr + 0x98, BitConverter.GetBytes(initFlags));
+            var returnValue = ReadProcessMemory<T>((UInt64)dummyParms);
+            //var returnValue2 = ReadProcessMemory<UInt64>((UInt64)retValPtr);
             CloseHandle(thread);
             return returnValue;
         }
@@ -278,8 +293,12 @@ namespace RemnantESP
         }
         public IntPtr FindPattern(String pattern)
         {
+            return FindPattern(pattern, Process.MainModule.BaseAddress, Process.MainModule.ModuleMemorySize);
+        }
+        public IntPtr FindPattern(String pattern, IntPtr start, Int32 length)
+        {
             //var skip = pattern.ToLower().Contains("cc") ? 0xcc : pattern.ToLower().Contains("aa") ? 0xaa : 0;
-            var sigScan = new SigScan(Process, Process.MainModule.BaseAddress, Process.MainModule.ModuleMemorySize);
+            var sigScan = new SigScan(Process, start, length);
             var arrayOfBytes = pattern.Split(' ').Select(b => b.Contains("?") ? (Byte)0 : (Byte)Convert.ToInt32(b, 16)).ToArray();
             var strMask = String.Join("", pattern.Split(' ').Select(b => b.Contains("?") ? '?' : 'x'));
             return sigScan.FindPattern(arrayOfBytes, strMask, 0);
